@@ -109,7 +109,7 @@ public final class Apriori {
 		DataFrame xact = Apriori.initXact(inFileName);
 		
 		// compute frequent pairs (itemsets of size 2), output them to a file
-		DataFrame frequentPairs = computeFrequentDoubles();
+		DataFrame frequentPairs = computeFrequentDoubles(xact, thresh);
 		
 		try {
 		    Apriori.saveOutput(frequentPairs, outDirName + "/" + thresh, "pairs");
@@ -118,7 +118,7 @@ public final class Apriori {
 		}
 	
 		// compute frequent triples (itemsets of size 3), output them to a file
-		DataFrame frequentTriples = computeFrequentTriples();
+		DataFrame frequentTriples = computeFrequentTriples(xact, thresh);
 		
 		try {
 		    Apriori.saveOutput(frequentTriples, outDirName + "/" + thresh, "triples");
@@ -130,15 +130,63 @@ public final class Apriori {
 	        
     }
     
-    private static DataFrame computeFrequentDoubles()
+    private static DataFrame computeFrequentDoubles(DataFrame transactions, double minsup)
     {
-    	// your code goes here
-    	return null;
+    	return computeApriori(transactions, 2, minsup);
     }
     
-    private static DataFrame computeFrequentTriples()
+    private static DataFrame computeFrequentTriples(DataFrame transactions, double minsup)
     {
-    	// your code goes here
-    	return null;
+    	return computeApriori(transactions, 3, minsup);
     }
+    
+    private static DataFrame computeApriori(DataFrame transactions, int maxK, double minsup)
+    {
+    	Itemsets F = new Itemsets(maxK);
+    	long n = transactions.count();
+    	
+    	F.set(1, computeOneItemsets(transactions));
+    	
+    	for (int k = 2; F.get(k - 1).count() > 0 && k <= maxK; k++) {
+    		DataFrame C = candidateGen(F.get(k - 1));
+    		
+    		for (Row t : transactions.toJavaRDD().collect()) {
+        		for (Row c : C.toJavaRDD().collect()) {
+        			
+        		}			
+    		}
+    		
+    		F.set(k, C.filter(C.col("count").gt(minsup * n)));
+    	}
+    	
+    	return F.get(maxK);
+    }
+
+	private static DataFrame candidateGen(DataFrame dataFrame) {
+		return null;
+	}
+
+	private static DataFrame computeOneItemsets(DataFrame transactions) {
+		return null;
+	}
+	
+	private static class Itemsets
+	{
+		private DataFrame[] dataFrames;
+		
+		public Itemsets(int number)
+		{
+			dataFrames = new DataFrame[number];
+		}
+		
+		public DataFrame get(int i)
+		{
+			return dataFrames[i - 1];
+		}
+		
+		public void set(int i, DataFrame dataFrame)
+		{
+			dataFrames[i - 1] = dataFrame;
+		}
+	}
 }
