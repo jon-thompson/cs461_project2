@@ -20,6 +20,7 @@ import org.apache.spark.sql.SQLContext;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
+import static org.apache.spark.sql.functions.*;
 
 /**
  * 
@@ -68,7 +69,7 @@ public final class Apriori {
 						  new Function<String, Row>() {
 						      static final long serialVersionUID = 42L;
 						      public Row call(String record) throws Exception {
-							  String[] fields = record.split("");
+							  String[] fields = record.split("\t");
 							  return  RowFactory.create(fields[0], Integer.parseInt(fields[1].trim()));
 						      }
 						  });
@@ -107,7 +108,7 @@ public final class Apriori {
 	
 		Apriori.init(master, numReducers);
 		DataFrame xact = Apriori.initXact(inFileName);
-		
+
 		// compute frequent pairs (itemsets of size 2), output them to a file
 		DataFrame frequentPairs = computeFrequentDoubles(xact, thresh);
 		
@@ -167,7 +168,22 @@ public final class Apriori {
 	}
 
 	private static DataFrame computeOneItemsets(DataFrame transactions) {
-		return null;
+		JavaRDD<Row> rows = transactions
+				.groupBy(col("item"))
+				.count()
+				.toJavaRDD()
+				.map(new Function<Row, Row>() {
+					  public Row call(Row row) {
+					    return RowFactory.create(new int[] { row.getInt(0) }, row.getLong(1));
+					  }
+					});
+		
+		List<StructField> fields = new ArrayList<StructField>();
+		fields.add(DataTypes.createStructField("items", DataTypes.createArrayType(DataTypes.IntegerType), true));
+		fields.add(DataTypes.createStructField("count", DataTypes.LongType, true));
+		StructType schema = DataTypes.createStructType(fields);
+		
+		return sqlContext.createDataFrame(rows, schema);
 	}
 	
 	private static class Itemsets
