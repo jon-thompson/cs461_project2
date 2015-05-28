@@ -20,6 +20,8 @@ import org.apache.spark.sql.SQLContext;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
+
+import scala.collection.Seq;
 import static org.apache.spark.sql.functions.*;
 
 /**
@@ -163,7 +165,38 @@ public final class Apriori {
     	return F.get(maxK);
     }
 
-	private static DataFrame candidateGen(DataFrame dataFrame) {
+	private static DataFrame candidateGen(DataFrame F) {
+		DataFrame p = F.select("items").toDF("p");
+		DataFrame q = F.select("items").toDF("q");
+		
+		JavaRDD<Row> rows = p.join(q)
+				.toJavaRDD()
+				.map(new Function<Row, Row>() {
+					public Row call(Row row) {
+						Seq<Integer> pArray = row.getSeq(0);
+						Seq<Integer> qArray = row.getSeq(1);
+						int k = pArray.length();
+						
+						for (int i = 0; i < k - 1; i++)
+							if (pArray.apply(i) != qArray.apply(i))
+								return null;
+						
+						if (pArray.apply(k - 1) >= qArray.apply(k - 1))
+							return null;
+						  
+					    return RowFactory.create();
+					 }
+				})
+				.filter(new Function<Row, Boolean>() {
+					public Boolean call(Row row) {
+						return row != null;
+					}
+				});
+		
+		DataFrame C = sqlContext.createDataFrame(rows, F.schema());
+		
+		C.show();
+		
 		return null;
 	}
 
