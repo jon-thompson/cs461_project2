@@ -5,7 +5,10 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Dictionary;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
@@ -14,6 +17,7 @@ import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.sql.DataFrame;
+import org.apache.spark.sql.GroupedData;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SQLContext;
@@ -35,7 +39,7 @@ public final class Apriori {
     
     private static JavaSparkContext sparkContext;
     private static SQLContext sqlContext;
-    
+    private static DataFrame _transactions;
     /**
      * Set up Spark and SQL contexts.
      */
@@ -110,7 +114,7 @@ public final class Apriori {
 	
 		Apriori.init(master, numReducers);
 		DataFrame xact = Apriori.initXact(inFileName);
-
+		_transactions = xact;
 		// compute frequent pairs (itemsets of size 2), output them to a file
 		DataFrame frequentPairs = computeFrequentDoubles(xact, thresh);
 		
@@ -120,14 +124,14 @@ public final class Apriori {
 		    System.out.println("Cound not output pairs " + ioe.toString());
 		}
 	
-		// compute frequent triples (itemsets of size 3), output them to a file
-		DataFrame frequentTriples = computeFrequentTriples(xact, thresh);
-		
-		try {
-		    Apriori.saveOutput(frequentTriples, outDirName + "/" + thresh, "triples");
-		} catch (IOException ioe) {
-		    System.out.println("Cound not output triples " + ioe.toString());
-		}
+//		// compute frequent triples (itemsets of size 3), output them to a file
+//		DataFrame frequentTriples = computeFrequentTriples(xact, thresh);
+//		//DataFrame frequentTriples = null;
+//		try {
+//		    Apriori.saveOutput(frequentTriples, outDirName + "/" + thresh, "triples");
+//		} catch (IOException ioe) {
+//		    System.out.println("Cound not output triples " + ioe.toString());
+//		}
 		
 		sparkContext.stop();
 	        
@@ -147,19 +151,44 @@ public final class Apriori {
     {
     	Itemsets F = new Itemsets(maxK);
     	long n = transactions.count();
+    	long numTransactions = transactions.groupBy("tid").count().count();
+    	DataFrame transactionItemSets = getTransactionIDs(transactions);
     	
     	F.set(1, computeOneItemsets(transactions));
     	
-    	for (int k = 2; F.get(k - 1).count() > 0 && k <= maxK; k++) {
+    	for (int k = 2; k <= maxK && F.get(k - 1).count() > 0; k++) {
     		DataFrame C = candidateGen(F.get(k - 1));
     		
-    		for (Row t : transactions.toJavaRDD().collect()) {
-        		for (Row c : C.toJavaRDD().collect()) {
-        			
-        		}			
+    		for (Row t : transactionItemSets.toJavaRDD().collect()) {	
+    			JavaRDD<Row> rows = C.toJavaRDD().map(new Function<Row, Row>() {
+    				public Row call(Row row) {
+    					String tid = t.getString(0);
+    					DataFrame transactionItems = getItemsForTransaction(_transactions, tid);
+    					//int tItem = t.getInt(1);
+    					Seq<Integer> candidateItems = row.getSeq(0);
+    					
+            			if (isCandidateInTransaction(transactionItems, candidateItems)) {
+    						//update the count
+    						long count;
+    						try {
+    							count = row.getLong(1) + 1;
+    						} catch (Exception e) {
+    							count = 0;
+    							System.out.println("Couldn't retrieve count");
+    						}  
+            				return RowFactory.create(candidateItems.toList(), count);        				
+            			}
+    					return row;
+    				}
+    			});
+
+    			C = sqlContext.createDataFrame(rows, C.schema());
+    			//hack to force evaluation of the filter
+    			C.show();
     		}
     		
-    		F.set(k, C.filter(C.col("count").gt(minsup * n)));
+       		F.set(k, C.filter(C.col("count").gt(new Long((long) (minsup * numTransactions)))));
+
     	}
     	
     	return F.get(maxK);
@@ -177,14 +206,16 @@ public final class Apriori {
 						Seq<Integer> qArray = row.getSeq(1);
 						int k = pArray.length();
 						
-						for (int i = 0; i < k - 1; i++)
+						for (int i = 0; i < k - 1; i++) {
 							if (pArray.apply(i) != qArray.apply(i))
-								return null;
+								return null;							
+						}
 						
 						if (pArray.apply(k - 1) >= qArray.apply(k - 1))
 							return null;
-						  
-					    return RowFactory.create();
+						
+						int[] items = new int[] {pArray.apply(k-1), qArray.apply(k-1)};
+					    return RowFactory.create(items, new Long(0));
 					 }
 				})
 				.filter(new Function<Row, Boolean>() {
@@ -197,7 +228,7 @@ public final class Apriori {
 		
 		C.show();
 		
-		return null;
+		return C;
 	}
 
 	private static DataFrame computeOneItemsets(DataFrame transactions) {
@@ -217,6 +248,44 @@ public final class Apriori {
 		StructType schema = DataTypes.createStructType(fields);
 		
 		return sqlContext.createDataFrame(rows, schema);
+	}
+	
+	//get unique transaction IDs
+	private static DataFrame getTransactionIDs(DataFrame transactions) {
+		return transactions.select("tid").distinct();
+	}
+	
+	//get the items in a particular transaction
+	private static DataFrame getItemsForTransaction(DataFrame transaction, String tid) {
+		return transaction.filter(transaction.col("tid").equalTo(tid)).select(transaction.col("item"));
+	}
+	
+	//check if all candidate items are present in a given transaction
+	private static Boolean isCandidateInTransaction(DataFrame transactionItems, Seq<Integer> candidateItems) {
+		//List<Integer> candidates = (List<Integer>) candidateItems.toList().le;
+		ArrayList<Integer> candidates = new ArrayList<Integer>();
+		int numCandidates = candidateItems.length();
+		List<Row> rows = transactionItems.toJavaRDD().collect();
+		
+		for (int i = 0; i < numCandidates; i++) {
+			candidates.add(candidateItems.apply(i));
+		}
+		
+		for (int i : candidates) {
+			Boolean existsInRow = false;
+			for (Row r : rows) {
+				int item = r.getInt(0);
+				if (item == i) {
+					existsInRow = true;
+					break;
+				}
+			}
+			
+			if (!existsInRow)
+				return false;
+		}
+		
+		return true;
 	}
 	
 	private static class Itemsets
