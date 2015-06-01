@@ -152,7 +152,7 @@ public final class Apriori {
     	long numTransactions = transactions.groupBy("tid").count().count();
     	DataFrame transactionItemSets = getTransactionIDs(transactions);
 
-		HashMap<String, ArrayList<Integer>> itemsMap = getTransactionsMap(transactionItemSets, transactions);
+		final HashMap<String, ArrayList<Integer>> itemsMap = getTransactionsMap(transactionItemSets, transactions);
 
     	F.set(1, computeOneItemsets(transactions));
     	
@@ -160,7 +160,7 @@ public final class Apriori {
     		DataFrame C = candidateGen(F.get(k - 1));
     		
     		for (Row t : transactionItemSets.toJavaRDD().collect()) {	
-    			String tid = t.getString(0);
+    			final String tid = t.getString(0);
     			JavaRDD<Row> rows = C.toJavaRDD().map(new Function<Row, Row>() {
     				public Row call(Row row) {
     					Seq<Integer> candidateItems = row.getSeq(0);
