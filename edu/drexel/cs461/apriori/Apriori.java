@@ -126,14 +126,14 @@ public final class Apriori {
 		    System.out.println("Cound not output pairs " + ioe.toString());
 		}
 	
-//		// compute frequent triples (itemsets of size 3), output them to a file
-//		DataFrame frequentTriples = computeFrequentTriples(xact, thresh);
-//		//DataFrame frequentTriples = null;
-//		try {
-//		    Apriori.saveOutput(frequentTriples, outDirName + "/" + thresh, "triples");
-//		} catch (IOException ioe) {
-//		    System.out.println("Cound not output triples " + ioe.toString());
-//		}
+		// compute frequent triples (itemsets of size 3), output them to a file
+		DataFrame frequentTriples = computeFrequentTriples(xact, thresh);
+		//DataFrame frequentTriples = null;
+		try {
+		    Apriori.saveOutput(frequentTriples, outDirName + "/" + thresh, "triples");
+		} catch (IOException ioe) {
+		    System.out.println("Cound not output triples " + ioe.toString());
+		}
 		
 		sparkContext.stop();
 	        
@@ -216,7 +216,13 @@ public final class Apriori {
 						if (pArray.apply(k - 1) >= qArray.apply(k - 1))
 							return null;
 						
-						int[] items = new int[] {pArray.apply(k-1), qArray.apply(k-1)};
+						int[] items = new int[k + 1];
+						
+						for (int i = 0; i < k; i ++)
+							items[i] = pArray.apply(i);
+						
+						items[k] = qArray.apply(k-1);
+						
 					    return RowFactory.create(items, new Long(0));
 					 }
 				})
