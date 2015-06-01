@@ -39,9 +39,6 @@ public final class Apriori {
     
     private static JavaSparkContext sparkContext;
     private static SQLContext sqlContext;
-    private static DataFrame _transactions;
-    private static DataFrame transactionItems;
-    
     /**
      * Set up Spark and SQL contexts.
      */
@@ -116,7 +113,6 @@ public final class Apriori {
 	
 		Apriori.init(master, numReducers);
 		DataFrame xact = Apriori.initXact(inFileName);
-		_transactions = xact;
 		// compute frequent pairs (itemsets of size 2), output them to a file
 		DataFrame frequentPairs = computeFrequentDoubles(xact, thresh);
 		
