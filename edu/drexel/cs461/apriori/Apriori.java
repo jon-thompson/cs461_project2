@@ -40,6 +40,8 @@ public final class Apriori {
     private static JavaSparkContext sparkContext;
     private static SQLContext sqlContext;
     private static DataFrame _transactions;
+    private static DataFrame transactionItems;
+    
     /**
      * Set up Spark and SQL contexts.
      */
@@ -153,21 +155,21 @@ public final class Apriori {
     	long n = transactions.count();
     	long numTransactions = transactions.groupBy("tid").count().count();
     	DataFrame transactionItemSets = getTransactionIDs(transactions);
-    	
+
+		HashMap<String, ArrayList<Integer>> itemsMap = getTransactionsMap(transactionItemSets, transactions);
+
     	F.set(1, computeOneItemsets(transactions));
     	
     	for (int k = 2; k <= maxK && F.get(k - 1).count() > 0; k++) {
     		DataFrame C = candidateGen(F.get(k - 1));
     		
     		for (Row t : transactionItemSets.toJavaRDD().collect()) {	
+    			String tid = t.getString(0);
     			JavaRDD<Row> rows = C.toJavaRDD().map(new Function<Row, Row>() {
     				public Row call(Row row) {
-    					String tid = t.getString(0);
-    					DataFrame transactionItems = getItemsForTransaction(_transactions, tid);
-    					//int tItem = t.getInt(1);
     					Seq<Integer> candidateItems = row.getSeq(0);
     					
-            			if (isCandidateInTransaction(transactionItems, candidateItems)) {
+    					if (checkCandidates(itemsMap.get(tid), candidateItems)) {
     						//update the count
     						long count;
     						try {
@@ -260,34 +262,41 @@ public final class Apriori {
 		return transaction.filter(transaction.col("tid").equalTo(tid)).select(transaction.col("item"));
 	}
 	
+	private static HashMap<String, ArrayList<Integer>> getTransactionsMap(DataFrame ids, DataFrame transactions) {
+		HashMap<String, ArrayList<Integer>> map = new HashMap<String, ArrayList<Integer>>();
+		
+		for (Row r : ids.toJavaRDD().collect()) {
+			ArrayList<Integer> transactionItems = new ArrayList<Integer>();
+			String tid = r.getString(0);
+			
+			DataFrame tItems = getItemsForTransaction(transactions, tid);
+			for (Row row : tItems.toJavaRDD().collect()) {
+				transactionItems.add(row.getInt(0));
+			}
+			map.put(tid, transactionItems);
+		}
+		
+		return map;
+	}
+	
 	//check if all candidate items are present in a given transaction
-	private static Boolean isCandidateInTransaction(DataFrame transactionItems, Seq<Integer> candidateItems) {
-		//List<Integer> candidates = (List<Integer>) candidateItems.toList().le;
+	private static Boolean checkCandidates(ArrayList<Integer> transactionItems, Seq<Integer> candidateItems) {
 		ArrayList<Integer> candidates = new ArrayList<Integer>();
 		int numCandidates = candidateItems.length();
-		List<Row> rows = transactionItems.toJavaRDD().collect();
 		
 		for (int i = 0; i < numCandidates; i++) {
 			candidates.add(candidateItems.apply(i));
 		}
 		
 		for (int i : candidates) {
-			Boolean existsInRow = false;
-			for (Row r : rows) {
-				int item = r.getInt(0);
-				if (item == i) {
-					existsInRow = true;
-					break;
-				}
-			}
-			
-			if (!existsInRow)
+			if (!transactionItems.contains(i)) {
 				return false;
+			}
 		}
 		
 		return true;
 	}
-	
+		
 	private static class Itemsets
 	{
 		private DataFrame[] dataFrames;
